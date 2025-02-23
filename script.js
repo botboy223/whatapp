@@ -182,7 +182,7 @@ domReady(function () {
                 item.code.startsWith('qrwale') && productDetails[item.code]?.isCustomer
             );
 
-            const imageDataUrl = await generateBillImage(totalAmount, customerItem);
+            const doc = generateBillPDF(totalAmount);
 
             billHistory.push({
                 date: new Date().toLocaleString(),
@@ -199,12 +199,14 @@ domReady(function () {
 
             if (customerItem) {
                 const customer = productDetails[customerItem.code];
-                const phoneNumber = customer.phone.startsWith('+') ? customer.phone : `+91${customer.phone}`;
-                const message = `Hello ${customer.name},\nHere is your bill for Rs. ${totalAmount.toFixed(2)}:`;
-                const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneNumber}&text=${encodeURIComponent(message + '\n' + imageDataUrl)}`;
+                const billText = generateBillText(customer, totalAmount);
+                const whatsappUrl = `https://wa.me/${customer.phone}?text=${encodeURIComponent(billText)}`;
                 window.open(whatsappUrl, '_blank');
+                
+                // Still generate PDF for record-keeping
+                const pdfBlob = doc.output('blob');
+                window.open(URL.createObjectURL(pdfBlob), '_blank');
             } else {
-                const doc = generateBillPDF(totalAmount);
                 const pdfBlob = doc.output('blob');
                 window.open(URL.createObjectURL(pdfBlob), '_blank');
             }
@@ -215,111 +217,45 @@ domReady(function () {
 
         } catch (error) {
             alert(`Error: ${error.message}`);
-            console.error(error);
         }
     });
 
-    async function generateBillImage(totalAmount, customerItem) {
-        const canvas = document.getElementById('billCanvas');
-        const ctx = canvas.getContext('2d');
-        const width = 300;
-        const lineHeight = 20;
-        const padding = 10;
+    function generateBillText(customer, totalAmount) {
+        const date = new Date().toLocaleDateString();
+        const time = new Date().toLocaleTimeString();
         const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
-        const itemCount = productItems.length || 1;
-        const qrSize = 100;
-        const height = padding * 2 + lineHeight * (8 + itemCount) + qrSize;
 
-        canvas.width = width;
-        canvas.height = height;
-
-        // Background
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-
-        // Header
-        ctx.fillStyle = '#007bff';
-        ctx.font = 'bold 20px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('INVOICE', width / 2, padding + lineHeight);
-
-        // Date and Time
-        ctx.fillStyle = '#333';
-        ctx.font = '14px Arial';
-        ctx.textAlign = 'left';
-        const now = new Date();
-        ctx.fillText(`Date: ${now.toLocaleDateString()}`, padding, padding + lineHeight * 2);
-        ctx.fillText(`Time: ${now.toLocaleTimeString()}`, padding, padding + lineHeight * 3);
-
-        // Customer Info (if present)
-        let yPos = padding + lineHeight * 4;
-        if (customerItem) {
-            const customer = productDetails[customerItem.code];
-            ctx.fillStyle = '#006600';
-            ctx.fillText(`Customer: ${customer.name}`, padding, yPos);
-            yPos += lineHeight;
-            ctx.fillText(`Phone: ${customer.phone}`, padding, yPos);
-            yPos += lineHeight;
-        }
-
-        // Items
-        ctx.fillStyle = '#000';
-        ctx.font = '14px Arial';
-        if (productItems.length === 0) {
-            ctx.fillText('No Items', padding, yPos);
-            yPos += lineHeight;
-        } else {
-            productItems.forEach(item => {
-                const product = productDetails[item.code];
-                const line = `${product.name} x${item.quantity} - Rs. ${(product.price * item.quantity).toFixed(2)}`;
-                ctx.fillText(line.substring(0, 40), padding, yPos);
-                yPos += lineHeight;
-            });
-        }
-
-        // Separator
-        ctx.strokeStyle = '#007bff';
-        ctx.beginPath();
-        ctx.moveTo(padding, yPos);
-        ctx.lineTo(width - padding, yPos);
-        ctx.stroke();
-        yPos += lineHeight;
-
-        // Total
-        ctx.fillStyle = '#ff0000';
-        ctx.font = 'bold 16px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Total: Rs. ${totalAmount.toFixed(2)}`, width / 2, yPos);
-        yPos += lineHeight * 2;
-
-        // QR Code
-        const tempQrContainer = document.getElementById('tempQrContainer');
-        tempQrContainer.innerHTML = ''; // Clear previous content
-        const qrCode = new QRCodeStyling({
-            width: qrSize,
-            height: qrSize,
-            data: `upi://pay?pa=${upiDetails.upiId}&pn=${encodeURIComponent(upiDetails.name)}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(upiDetails.note)}`,
-            dotsOptions: { color: "#000", type: "rounded" },
-            backgroundOptions: { color: "#fff" }
+        let itemsText = '';
+        productItems.forEach(item => {
+            const product = productDetails[item.code];
+            const name = product.name.padEnd(15, ' ');
+            const qty = item.quantity.toString().padStart(3, ' ');
+            const price = (product.price * item.quantity).toFixed(2).padStart(8, ' ');
+            itemsText += `| ${name} | ${qty} | ${price} |\n`;
         });
-        
-        qrCode.append(tempQrContainer);
-        
-        // Wait for QR code to render
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const qrCanvas = tempQrContainer.querySelector('canvas');
-        if (qrCanvas) {
-            ctx.drawImage(qrCanvas, (width - qrSize) / 2, yPos, qrSize, qrSize);
-        } else {
-            console.error('QR code canvas not found');
-            ctx.fillStyle = '#ff0000';
-            ctx.fillText('QR Code Error', (width - qrSize) / 2, yPos + qrSize / 2);
-        }
 
-        const imageDataUrl = canvas.toDataURL('image/png');
-        tempQrContainer.innerHTML = ''; // Clean up
-        return imageDataUrl;
+        return `
+===== BILL =====
+Customer: ${customer.name}
+Phone: ${customer.phone}
+Date: ${date}
+Time: ${time}
+================
+Items:
++-----------------+
+| Name           | Qty | Amount   |
++-----------------+
+${itemsText}+-----------------+
+Total: Rs. ${totalAmount.toFixed(2)}
+================
+Payment Details:
+UPI ID: ${upiDetails.upiId}
+Payee: ${upiDetails.name}
+Note: ${upiDetails.note}
+================
+Thank You!
+Visit Again!
+================`;
     }
 
     function generateBillPDF(totalAmount) {

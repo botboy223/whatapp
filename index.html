@@ -101,23 +101,12 @@
         </div>
     </div>
 
-    <!-- Hidden bill template -->
-    <div id="billTemplate" style="display: none; width: 2in; font-family: monospace; font-size: 10pt;">
-        <h2 style="text-align: center;">INVOICE</h2>
-        <p>Date: <span id="billDate"></span></p>
-        <p>Time: <span id="billTime"></span></p>
-        <p id="billCustomer" style="display: none;">Customer: <span id="billCustomerName"></span></p>
-        <p id="billPhone" style="display: none;">Phone: <span id="billCustomerPhone"></span></p>
-        <hr style="border: none; border-top: 1px dashed #000;">
-        <div id="billItems"></div>
-        <hr style="border: none; border-top: 1px dashed #000;">
-        <p style="text-align: center;">Total: Rs. <span id="billTotal"></span></p>
-        <div id="billQR" style="text-align: center; margin-top: 10px;"></div>
-    </div>
+    <!-- Hidden canvas for image generation -->
+    <canvas id="billCanvas" style="display: none;"></canvas>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/qr-code-styling/lib/qr-code-styling.js"></script>
-    <script src="lib/html2pdf.bundle.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

@@ -17,12 +17,8 @@ body {
     border-radius: 8px;
     text-align: center;
     width: 100%;
-    height: calc(100vh - 60px); /* Adjust based on your header/footer if any */
+    height: calc(100vh - 60px);
     overflow-y: auto;
-}
-
-.element {
-    margin-bottom: 22px;
 }
 
 .input-group {
@@ -53,49 +49,13 @@ button:hover {
     background-color: #0056b3;
 }
 
-@media (max-width: 600px) {
-    .container {
-        padding: 20px;
-    }
-
-    input {
-        width: 92%;
-    }
-
-    button {
-        width: 100%;
-    }
-}
-
 .option {
     display: none;
-    margin-top: 20px; /* Space from the More button */
+    margin-top: 20px;
 }
 
 .hidden {
     display: none;
-}
-
-.dashboard {
-    margin-bottom: 20px;
-}
-
-.button-group {
-    margin-bottom: 20px;
-}
-
-#moreButton {
-    display: block;
-    visibility: visible;
-    cursor: pointer;
-    z-index: 10;
-    position: relative;
-    padding: 10px 20px;
-    font-size: 16px;
-}
-
-#moreOptions {
-    position: relative; /* Fixed for mobile, relative for desktop */
 }
 
 .dashboard {
@@ -106,23 +66,13 @@ button:hover {
     text-align: left;
 }
 
-.dashboard h3 {
-    margin-top: 0;
-    margin-bottom: 15px;
-    color: #333;
+.button-group {
+    margin-bottom: 20px;
 }
 
-.dashboard p {
-    margin: 5px 0;
-}
-
-.dashboard ul {
-    padding-left: 20px;
-    margin: 0;
-}
-
-.dashboard li {
-    margin-bottom: 5px;
+#moreButton {
+    padding: 10px 20px;
+    font-size: 16px;
 }
 
 #bill-history {
@@ -130,7 +80,6 @@ button:hover {
     overflow-y: auto;
     padding: 10px;
     border: 1px solid #ddd;
-    border-radius: 5px;
 }
 
 .bill-entry {
@@ -146,18 +95,26 @@ button:hover {
 }
 
 #inventory-list input {
-    width: 50px; /* Adjust as needed */
+    width: 50px;
 }
 
-#inventory-list button {
-    padding: 5px 10px;
-    font-size: 12px;
+.cart-item.customer {
+    background-color: #e6ffe6;
+    padding: 5px;
+    margin: 5px 0;
 }
 
-/* Ensure More button is always clickable */
-.option::after {
-    content: '';
-    display: block;
-    height: 50px; /* Height of the More button */
-    pointer-events: none; /* Allows click through */
+.customer-name {
+    font-weight: bold;
+    color: #006600;
+}
+
+.customer-phone {
+    margin-left: 10px;
+}
+
+@media (max-width: 600px) {
+    .container { padding: 20px; }
+    input { width: 92%; }
+    button { width: 100%; }
 }

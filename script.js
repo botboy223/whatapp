@@ -6,6 +6,8 @@ function domReady(fn) {
     }
 }
 
+window.jsPDF = window.jspdf.jsPDF;
+
 function saveToLocalStorage(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
 }
@@ -180,11 +182,13 @@ domReady(function () {
                 item.code.startsWith('qrwale') && productDetails[item.code]?.isCustomer
             );
 
-            const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
+            // Generate colorful bill image
+            const imageDataUrl = await generateBillImage(totalAmount, customerItem);
+
             billHistory.push({
                 date: new Date().toLocaleString(),
                 total: totalAmount.toFixed(2),
-                items: [...productItems]
+                items: [...cart.filter(item => !productDetails[item.code]?.isCustomer)]
             });
             saveToLocalStorage('billHistory', billHistory);
 
@@ -194,100 +198,16 @@ domReady(function () {
                 }
             });
 
-            // Prepare bill template
-            const billTemplate = document.getElementById('billTemplate');
-            const billDate = document.getElementById('billDate');
-            const billTime = document.getElementById('billTime');
-            const billCustomer = document.getElementById('billCustomer');
-            const billCustomerName = document.getElementById('billCustomerName');
-            const billCustomerPhone = document.getElementById('billCustomerPhone');
-            const billItems = document.getElementById('billItems');
-            const billTotal = document.getElementById('billTotal');
-            const billQR = document.getElementById('billQR');
-
-            billDate.textContent = new Date().toLocaleDateString();
-            billTime.textContent = new Date().toLocaleTimeString();
-            billItems.innerHTML = '';
-            billTotal.textContent = totalAmount.toFixed(2);
-
             if (customerItem) {
                 const customer = productDetails[customerItem.code];
-                billCustomer.style.display = 'block';
-                billCustomerName.textContent = customer.name;
-                billCustomerPhone.textContent = customer.phone;
+                const phoneNumber = customer.phone.startsWith('+') ? customer.phone : `+91${customer.phone}`; // Assuming India code if not provided
+                const message = `Hello ${customer.name},\nHere is your bill for Rs. ${totalAmount.toFixed(2)}:`;
+                const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneNumber}&text=${encodeURIComponent(message + '\n' + imageDataUrl)}`;
+                window.open(whatsappUrl, '_blank');
             } else {
-                billCustomer.style.display = 'none';
-                billCustomerPhone.style.display = 'none';
-            }
-
-            if (productItems.length === 0) {
-                billItems.innerHTML = '<p>No Items</p>';
-            } else {
-                productItems.forEach(item => {
-                    const product = productDetails[item.code];
-                    const name = (product?.name || 'Unknown').substring(0, 12).padEnd(12, ' ');
-                    const qty = item.quantity.toString().padStart(2, ' ');
-                    const amount = (product?.price * item.quantity).toFixed(2).padStart(7, ' ');
-                    const p = document.createElement('p');
-                    p.textContent = `${name} x${qty} Rs${amount}`;
-                    billItems.appendChild(p);
-                });
-            }
-
-            // Generate QR Code
-            const upiUrl = `upi://pay?pa=${upiDetails.upiId}&pn=${encodeURIComponent(upiDetails.name)}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(upiDetails.note)}`;
-            const qrCode = new QRCodeStyling({
-                width: 100,
-                height: 100,
-                data: upiUrl,
-                dotsOptions: { color: "#000000", type: "rounded" },
-                backgroundOptions: { color: "#ffffff" }
-            });
-            billQR.innerHTML = '';
-            qrCode.append(billQR);
-
-            // Wait for QR code to render
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // Generate PDF
-            const opt = {
-                margin: 0.1,
-                filename: 'bill.pdf',
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, width: 144 }, // 2in at 72dpi
-                jsPDF: { unit: 'in', format: [2, billTemplate.scrollHeight / 72 + 0.5], orientation: 'portrait' }
-            };
-
-            const pdfBlob = await html2pdf().from(billTemplate).set(opt).output('blob');
-            const pdfFile = new File([pdfBlob], "bill.pdf", { type: "application/pdf" });
-
-            if (customerItem) {
-                const customer = productDetails[customerItem.code];
-                const phone = customer.phone.startsWith('+') ? customer.phone : `+91${customer.phone}`;
-                const message = `Hello ${customer.name},\nHere is your bill for Rs. ${totalAmount.toFixed(2)}. Please find the PDF attached.`;
-
-                if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-                    await navigator.share({
-                        files: [pdfFile],
-                        title: 'Your Bill',
-                        text: message
-                    });
-                } else {
-                    const pdfUrl = URL.createObjectURL(pdfBlob);
-                    const whatsappUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
-                    
-                    const link = document.createElement('a');
-                    link.href = pdfUrl;
-                    link.download = 'bill.pdf';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-
-                    window.open(whatsappUrl, '_blank');
-                    alert('PDF downloaded. Please attach it in WhatsApp to send to ' + phone);
-                }
-            } else {
-                html2pdf().from(billTemplate).set(opt).save();
+                const doc = generateBillPDF(totalAmount);
+                const pdfBlob = doc.output('blob');
+                window.open(URL.createObjectURL(pdfBlob), '_blank');
             }
 
             cart = [];
@@ -299,6 +219,147 @@ domReady(function () {
             console.error(error);
         }
     });
+
+    async function generateBillImage(totalAmount, customerItem) {
+        const canvas = document.getElementById('billCanvas');
+        const ctx = canvas.getContext('2d');
+        const width = 300; // Suitable width for thermal printer-like display
+        const lineHeight = 20;
+        const padding = 10;
+        const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
+        const itemCount = productItems.length || 1;
+        const qrSize = 100;
+        const height = padding * 2 + lineHeight * (8 + itemCount) + qrSize; // Adjusted height based on content
+
+        canvas.width = width;
+        canvas.height = height;
+
+        // Background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        // Header
+        ctx.fillStyle = '#007bff';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('INVOICE', width / 2, padding + lineHeight);
+
+        // Date and Time
+        ctx.fillStyle = '#333';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'left';
+        const now = new Date();
+        ctx.fillText(`Date: ${now.toLocaleDateString()}`, padding, padding + lineHeight * 2);
+        ctx.fillText(`Time: ${now.toLocaleTimeString()}`, padding, padding + lineHeight * 3);
+
+        // Customer Info (if present)
+        if (customerItem) {
+            const customer = productDetails[customerItem.code];
+            ctx.fillStyle = '#006600';
+            ctx.fillText(`Customer: ${customer.name}`, padding, padding + lineHeight * 4);
+            ctx.fillText(`Phone: ${customer.phone}`, padding, padding + lineHeight * 5);
+        }
+
+        // Items
+        ctx.fillStyle = '#000';
+        ctx.font = '14px Arial';
+        let yPos = padding + lineHeight * (customerItem ? 6 : 4);
+        if (productItems.length === 0) {
+            ctx.fillText('No Items', padding, yPos);
+            yPos += lineHeight;
+        } else {
+            productItems.forEach(item => {
+                const product = productDetails[item.code];
+                const line = `${product.name} x${item.quantity} - Rs. ${(product.price * item.quantity).toFixed(2)}`;
+                ctx.fillText(line.substring(0, 40), padding, yPos); // Truncate if too long
+                yPos += lineHeight;
+            });
+        }
+
+        // Separator
+        ctx.strokeStyle = '#007bff';
+        ctx.beginPath();
+        ctx.moveTo(padding, yPos);
+        ctx.lineTo(width - padding, yPos);
+        ctx.stroke();
+        yPos += lineHeight;
+
+        // Total
+        ctx.fillStyle = '#ff0000';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Total: Rs. ${totalAmount.toFixed(2)}`, width / 2, yPos);
+        yPos += lineHeight * 2;
+
+        // QR Code
+        const qrCode = new QRCodeStyling({
+            width: qrSize,
+            height: qrSize,
+            data: `upi://pay?pa=${upiDetails.upiId}&pn=${encodeURIComponent(upiDetails.name)}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(upiDetails.note)}`,
+            dotsOptions: { color: "#000", type: "rounded" },
+            backgroundOptions: { color: "#fff" }
+        });
+        await qrCode.getRawData('canvas').then(qrCanvas => {
+            ctx.drawImage(qrCanvas, (width - qrSize) / 2, yPos, qrSize, qrSize);
+        });
+
+        return canvas.toDataURL('image/png');
+    }
+
+    function generateBillPDF(totalAmount) {
+        const pageWidth = 48;
+        const margin = 1;
+        const maxLineWidth = pageWidth - (margin * 2);
+        const lineHeight = 4;
+        const contentHeight = calculateContentHeight(cart.filter(item => !productDetails[item.code]?.isCustomer).length);
+
+        const doc = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: [pageWidth, contentHeight]
+        });
+
+        doc.setFont("courier");
+        doc.setFontSize(8);
+        let yPos = margin;
+
+        doc.setFontSize(10);
+        doc.text("INVOICE", pageWidth / 2, yPos, { align: 'center' });
+        yPos += lineHeight;
+
+        doc.setFontSize(8);
+        doc.text(`Dt:${new Date().toLocaleDateString()}`, margin, yPos);
+        yPos += lineHeight;
+        doc.text(`Tm:${new Date().toLocaleTimeString()}`, margin, yPos);
+        yPos += lineHeight;
+
+        const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
+        if (productItems.length === 0) {
+            doc.text("No Items", margin, yPos);
+            yPos += lineHeight;
+        } else {
+            productItems.forEach(item => {
+                const product = productDetails[item.code];
+                const name = (product?.name || 'Unk').substring(0, 12).padEnd(12, ' ');
+                const qty = item.quantity.toString().padStart(2, ' ');
+                const amount = (product?.price * item.quantity).toFixed(2).padStart(7, ' ');
+                doc.text(`${name}x${qty}Rs${amount}`, margin, yPos);
+                yPos += lineHeight;
+            });
+        }
+
+        yPos += lineHeight;
+        doc.text("-".repeat(maxLineWidth / 2), pageWidth / 2, yPos, { align: 'center' });
+        yPos += lineHeight;
+        doc.text(`Tot:Rs${totalAmount.toFixed(2)}`, pageWidth / 2, yPos, { align: 'center' });
+
+        return doc;
+    }
+
+    function calculateContentHeight(itemCount) {
+        const lineHeight = 4;
+        return (lineHeight * 4) + (itemCount === 0 ? lineHeight : itemCount * lineHeight) + (lineHeight * 4) + 8;
+    }
 
     document.getElementById('qrForm').addEventListener('submit', (e) => {
         e.preventDefault();

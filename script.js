@@ -236,36 +236,40 @@ domReady(function () {
         let itemsText = '';
         productItems.forEach(item => {
             const product = productDetails[item.code];
-            const name = (product.name.length > 20 ? product.name.substring(0, 17) + '...' : product.name).padEnd(20, ' ');
-            const qty = item.quantity.toString().padStart(3, ' ');
-            const price = product.price.toFixed(2).padStart(8, ' ');
-            const total = (product.price * item.quantity).toFixed(2).padStart(10, ' ');
-            itemsText += `│ ${name} │ ${qty} │ ${price} │ ${total} │\n`;
+            const name = (product.name.length > 12 ? product.name.substring(0, 9) + '...' : product.name).padEnd(12, ' ');
+            const qty = item.quantity.toString().padStart(2, ' ');
+            const total = (product.price * item.quantity).toFixed(2).padStart(9, ' ');
+            itemsText += `│ ${name} ${qty} ${total} │\n`;
         });
 
+        const customerName = customer.name.length > 22 ? customer.name.substring(0, 19) + '...' : customer.name;
+        const upiId = upiDetails.upiId.length > 22 ? upiDetails.upiId.substring(0, 19) + '...' : upiDetails.upiId;
+        const payee = upiDetails.name.length > 22 ? upiDetails.name.substring(0, 19) + '...' : upiDetails.name;
+        const note = upiDetails.note.length > 22 ? upiDetails.note.substring(0, 19) + '...' : upiDetails.note;
+
         return `
-┌──────────────────────────────┐
-│          BILL RECEIPT        │
-└──────────────────────────────┘
-Customer: ${customer.name}
-Phone: ${customer.phone}
-Date: ${date}
-Time: ${time}
-┌──────────────────────────────┐
-│ ITEMS                        │
-├──────────────────────────────┤
-│ Name                  │ Qty │ Price    │ Total     │
-├──────────────────────────────┤
-${itemsText}├──────────────────────────────┤
-│ Total: Rs. ${totalAmount.toFixed(2).padStart(23, ' ')} │
-└──────────────────────────────┘
-Payment Details:
-UPI ID: ${upiDetails.upiId}
-Payee: ${upiDetails.name}
-Note: ${upiDetails.note}
-┌──────────────────────────────┐
-│ Thank You! Visit Again!      │
-└──────────────────────────────┘
+┌──────────────────────┐
+│      BILL            │
+└──────────────────────┘
+Cust: ${customerName}
+Ph: ${customer.phone}
+Dt: ${date}
+Tm: ${time}
+┌──────────────────────┐
+│ Items                │
+├──────────────────────┤
+│ Name         Qt Total │
+├──────────────────────┤
+${itemsText}├──────────────────────┤
+│ Tot: Rs. ${totalAmount.toFixed(2).padStart(10, ' ')} │
+└──────────────────────┘
+Pay:
+UPI: ${upiId}
+To: ${payee}
+Note: ${note}
+┌──────────────────────┐
+│ Thank You!           │
+└──────────────────────┘
 `;
     }
 

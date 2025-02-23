@@ -182,7 +182,6 @@ domReady(function () {
                 item.code.startsWith('qrwale') && productDetails[item.code]?.isCustomer
             );
 
-            // Generate colorful bill image
             const imageDataUrl = await generateBillImage(totalAmount, customerItem);
 
             billHistory.push({
@@ -200,7 +199,7 @@ domReady(function () {
 
             if (customerItem) {
                 const customer = productDetails[customerItem.code];
-                const phoneNumber = customer.phone.startsWith('+') ? customer.phone : `+91${customer.phone}`; // Assuming India code if not provided
+                const phoneNumber = customer.phone.startsWith('+') ? customer.phone : `+91${customer.phone}`;
                 const message = `Hello ${customer.name},\nHere is your bill for Rs. ${totalAmount.toFixed(2)}:`;
                 const whatsappUrl = `https://api.whatsapp.com/send?phone=${phoneNumber}&text=${encodeURIComponent(message + '\n' + imageDataUrl)}`;
                 window.open(whatsappUrl, '_blank');
@@ -223,13 +222,13 @@ domReady(function () {
     async function generateBillImage(totalAmount, customerItem) {
         const canvas = document.getElementById('billCanvas');
         const ctx = canvas.getContext('2d');
-        const width = 300; // Suitable width for thermal printer-like display
+        const width = 300;
         const lineHeight = 20;
         const padding = 10;
         const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
         const itemCount = productItems.length || 1;
         const qrSize = 100;
-        const height = padding * 2 + lineHeight * (8 + itemCount) + qrSize; // Adjusted height based on content
+        const height = padding * 2 + lineHeight * (8 + itemCount) + qrSize;
 
         canvas.width = width;
         canvas.height = height;
@@ -253,17 +252,19 @@ domReady(function () {
         ctx.fillText(`Time: ${now.toLocaleTimeString()}`, padding, padding + lineHeight * 3);
 
         // Customer Info (if present)
+        let yPos = padding + lineHeight * 4;
         if (customerItem) {
             const customer = productDetails[customerItem.code];
             ctx.fillStyle = '#006600';
-            ctx.fillText(`Customer: ${customer.name}`, padding, padding + lineHeight * 4);
-            ctx.fillText(`Phone: ${customer.phone}`, padding, padding + lineHeight * 5);
+            ctx.fillText(`Customer: ${customer.name}`, padding, yPos);
+            yPos += lineHeight;
+            ctx.fillText(`Phone: ${customer.phone}`, padding, yPos);
+            yPos += lineHeight;
         }
 
         // Items
         ctx.fillStyle = '#000';
         ctx.font = '14px Arial';
-        let yPos = padding + lineHeight * (customerItem ? 6 : 4);
         if (productItems.length === 0) {
             ctx.fillText('No Items', padding, yPos);
             yPos += lineHeight;
@@ -271,7 +272,7 @@ domReady(function () {
             productItems.forEach(item => {
                 const product = productDetails[item.code];
                 const line = `${product.name} x${item.quantity} - Rs. ${(product.price * item.quantity).toFixed(2)}`;
-                ctx.fillText(line.substring(0, 40), padding, yPos); // Truncate if too long
+                ctx.fillText(line.substring(0, 40), padding, yPos);
                 yPos += lineHeight;
             });
         }
@@ -292,6 +293,8 @@ domReady(function () {
         yPos += lineHeight * 2;
 
         // QR Code
+        const tempQrContainer = document.getElementById('tempQrContainer');
+        tempQrContainer.innerHTML = ''; // Clear previous content
         const qrCode = new QRCodeStyling({
             width: qrSize,
             height: qrSize,
@@ -299,11 +302,24 @@ domReady(function () {
             dotsOptions: { color: "#000", type: "rounded" },
             backgroundOptions: { color: "#fff" }
         });
-        await qrCode.getRawData('canvas').then(qrCanvas => {
+        
+        qrCode.append(tempQrContainer);
+        
+        // Wait for QR code to render
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        const qrCanvas = tempQrContainer.querySelector('canvas');
+        if (qrCanvas) {
             ctx.drawImage(qrCanvas, (width - qrSize) / 2, yPos, qrSize, qrSize);
-        });
+        } else {
+            console.error('QR code canvas not found');
+            ctx.fillStyle = '#ff0000';
+            ctx.fillText('QR Code Error', (width - qrSize) / 2, yPos + qrSize / 2);
+        }
 
-        return canvas.toDataURL('image/png');
+        const imageDataUrl = canvas.toDataURL('image/png');
+        tempQrContainer.innerHTML = ''; // Clean up
+        return imageDataUrl;
     }
 
     function generateBillPDF(totalAmount) {

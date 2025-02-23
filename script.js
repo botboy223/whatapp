@@ -182,7 +182,7 @@ domReady(function () {
                 item.code.startsWith('qrwale') && productDetails[item.code]?.isCustomer
             );
 
-            const doc = generateBillPDF(totalAmount);
+            const doc = await generateBillPDF(totalAmount);
 
             billHistory.push({
                 date: new Date().toLocaleString(),
@@ -273,12 +273,13 @@ Note: ${note}
 `;
     }
 
-    function generateBillPDF(totalAmount) {
+    async function generateBillPDF(totalAmount) {
         const pageWidth = 48;
         const margin = 1;
         const maxLineWidth = pageWidth - (margin * 2);
         const lineHeight = 4;
-        const contentHeight = calculateContentHeight(cart.filter(item => !productDetails[item.code]?.isCustomer).length);
+        const qrHeight = 20; // QR code height in mm
+        const contentHeight = calculateContentHeight(cart.filter(item => !productDetails[item.code]?.isCustomer).length) + qrHeight;
 
         const doc = new jsPDF({
             orientation: 'portrait',
@@ -319,13 +320,37 @@ Note: ${note}
         doc.text("-".repeat(maxLineWidth / 2), pageWidth / 2, yPos, { align: 'center' });
         yPos += lineHeight;
         doc.text(`Tot:Rs${totalAmount.toFixed(2)}`, pageWidth / 2, yPos, { align: 'center' });
+        yPos += lineHeight * 2;
+
+        // Generate UPI QR Code
+        const upiUrl = `upi://pay?pa=${upiDetails.upiId}&pn=${encodeURIComponent(upiDetails.name)}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(upiDetails.note)}`;
+        const qrCode = new QRCodeStyling({
+            width: 100,
+            height: 100,
+            data: upiUrl,
+            dotsOptions: { color: "#000", type: "square" },
+            backgroundOptions: { color: "#fff" }
+        });
+
+        // Render QR code to a canvas and add to PDF
+        const qrContainer = document.getElementById('bill-qr-code');
+        qrContainer.innerHTML = '';
+        qrCode.append(qrContainer);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for QR code to render
+        const qrCanvas = qrContainer.querySelector('canvas');
+        if (qrCanvas) {
+            const qrData = qrCanvas.toDataURL('image/png');
+            const qrWidth = 20; // Width in mm (fits 48mm paper)
+            const qrX = (pageWidth - qrWidth) / 2; // Center the QR code
+            doc.addImage(qrData, 'PNG', qrX, yPos, qrWidth, qrWidth);
+        }
 
         return doc;
     }
 
     function calculateContentHeight(itemCount) {
         const lineHeight = 4;
-        return (lineHeight * 4) + (itemCount === 0 ? lineHeight : itemCount * lineHeight) + (lineHeight * 4) + 8;
+        return (lineHeight * 4) + (itemCount === 0 ? lineHeight : itemCount * lineHeight) + (lineHeight * 4);
     }
 
     document.getElementById('qrForm').addEventListener('submit', (e) => {

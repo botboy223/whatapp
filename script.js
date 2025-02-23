@@ -203,12 +203,20 @@ domReady(function () {
                 const whatsappUrl = `https://wa.me/${customer.phone}?text=${encodeURIComponent(billText)}`;
                 window.open(whatsappUrl, '_blank');
                 
-                // Still generate PDF for record-keeping
+                // Generate PDF separately for local use
                 const pdfBlob = doc.output('blob');
-                window.open(URL.createObjectURL(pdfBlob), '_blank');
+                const pdfUrl = URL.createObjectURL(pdfBlob);
+                const pdfWindow = window.open(pdfUrl, '_blank');
+                if (!pdfWindow) {
+                    alert('Please allow pop-ups to view the PDF bill');
+                }
             } else {
                 const pdfBlob = doc.output('blob');
-                window.open(URL.createObjectURL(pdfBlob), '_blank');
+                const pdfUrl = URL.createObjectURL(pdfBlob);
+                const pdfWindow = window.open(pdfUrl, '_blank');
+                if (!pdfWindow) {
+                    alert('Please allow pop-ups to view the PDF bill');
+                }
             }
 
             cart = [];
@@ -224,38 +232,41 @@ domReady(function () {
         const date = new Date().toLocaleDateString();
         const time = new Date().toLocaleTimeString();
         const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
-
+        
         let itemsText = '';
         productItems.forEach(item => {
             const product = productDetails[item.code];
-            const name = product.name.padEnd(15, ' ');
+            const name = (product.name.length > 20 ? product.name.substring(0, 17) + '...' : product.name).padEnd(20, ' ');
             const qty = item.quantity.toString().padStart(3, ' ');
-            const price = (product.price * item.quantity).toFixed(2).padStart(8, ' ');
-            itemsText += `| ${name} | ${qty} | ${price} |\n`;
+            const price = product.price.toFixed(2).padStart(8, ' ');
+            const total = (product.price * item.quantity).toFixed(2).padStart(10, ' ');
+            itemsText += `│ ${name} │ ${qty} │ ${price} │ ${total} │\n`;
         });
 
         return `
-===== BILL =====
+┌──────────────────────────────┐
+│          BILL RECEIPT        │
+└──────────────────────────────┘
 Customer: ${customer.name}
 Phone: ${customer.phone}
 Date: ${date}
 Time: ${time}
-================
-Items:
-+-----------------+
-| Name           | Qty | Amount   |
-+-----------------+
-${itemsText}+-----------------+
-Total: Rs. ${totalAmount.toFixed(2)}
-================
+┌──────────────────────────────┐
+│ ITEMS                        │
+├──────────────────────────────┤
+│ Name                  │ Qty │ Price    │ Total     │
+├──────────────────────────────┤
+${itemsText}├──────────────────────────────┤
+│ Total: Rs. ${totalAmount.toFixed(2).padStart(23, ' ')} │
+└──────────────────────────────┘
 Payment Details:
 UPI ID: ${upiDetails.upiId}
 Payee: ${upiDetails.name}
 Note: ${upiDetails.note}
-================
-Thank You!
-Visit Again!
-================`;
+┌──────────────────────────────┐
+│ Thank You! Visit Again!      │
+└──────────────────────────────┘
+`;
     }
 
     function generateBillPDF(totalAmount) {

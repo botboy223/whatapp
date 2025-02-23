@@ -196,36 +196,37 @@ domReady(function () {
                 }
             });
 
+            const doc = generateBillPDF(totalAmount);
+            const pdfBlob = doc.output('blob');
+            const pdfFile = new File([pdfBlob], "bill.pdf", { type: "application/pdf" });
+
             if (customerItem) {
                 const customer = productDetails[customerItem.code];
-                const billImage = await generateBillPNG(totalAmount, customer);
-                const blob = await dataURLtoBlob(billImage);
-                const file = new File([blob], "bill.png", { type: "image/png" });
-                
-                const message = `Hello ${customer.name},\nHere's your bill for Rs. ${totalAmount.toFixed(2)}.`;
-                const whatsappUrl = `https://wa.me/${customer.phone}?text=${encodeURIComponent(message)}`;
-                
-                // Open WhatsApp and prompt user to attach the image
-                window.open(whatsappUrl, '_blank');
-                
-                // For automatic file sharing, we need to use navigator.share (mobile only)
+                const message = `Hello ${customer.name},\nHere is your bill for Rs. ${totalAmount.toFixed(2)}. Please find the PDF attached.`;
+
                 if (navigator.share) {
-                    navigator.share({
-                        files: [file],
+                    // Mobile browsers with share API
+                    await navigator.share({
+                        files: [pdfFile],
                         title: 'Your Bill',
                         text: message
-                    }).catch(err => console.log('Sharing failed', err));
+                    });
                 } else {
-                    alert('Please manually attach the bill.png from your downloads');
-                    // Trigger download as fallback
+                    // Desktop fallback: Download PDF and open WhatsApp
+                    const pdfUrl = URL.createObjectURL(pdfBlob);
+                    const whatsappUrl = `https://api.whatsapp.com/send?phone=${customer.phone}&text=${encodeURIComponent(message)}`;
+                    
+                    // Download PDF
                     const link = document.createElement('a');
-                    link.href = billImage;
-                    link.download = 'bill.png';
+                    link.href = pdfUrl;
+                    link.download = 'bill.pdf';
                     link.click();
+
+                    // Open WhatsApp
+                    window.open(whatsappUrl, '_blank');
+                    alert('PDF downloaded. Please manually attach it in WhatsApp.');
                 }
             } else {
-                const doc = generateBillPDF(totalAmount);
-                const pdfBlob = doc.output('blob');
                 window.open(URL.createObjectURL(pdfBlob), '_blank');
             }
 
@@ -238,108 +239,6 @@ domReady(function () {
             console.error(error);
         }
     });
-
-    async function generateBillPNG(totalAmount, customer) {
-        const canvas = document.getElementById('billCanvas');
-        const ctx = canvas.getContext('2d');
-        
-        // Dimensions (adjusted for 2-inch thermal printer ~ 384px width at 203dpi)
-        const width = 384;
-        const lineHeight = 30;
-        const padding = 10;
-        const qrSize = 150;
-        const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
-        const height = (productItems.length + 12) * lineHeight + qrSize + padding * 2;
-
-        canvas.width = width;
-        canvas.height = height;
-
-        // Background
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-
-        // Colors
-        const textColor = '#000000';
-        const accentColor = '#006600'; // Green for WhatsApp theme
-
-        // Font settings
-        ctx.font = 'bold 24px Arial';
-        ctx.fillStyle = accentColor;
-        ctx.textAlign = 'center';
-        let yPos = padding;
-
-        // Header
-        ctx.fillText("INVOICE", width / 2, yPos + lineHeight);
-        yPos += lineHeight * 2;
-
-        ctx.font = '16px Arial';
-        ctx.fillStyle = textColor;
-        ctx.textAlign = 'left';
-        
-        // Date and Time
-        const now = new Date();
-        ctx.fillText(`Date: ${now.toLocaleDateString()}`, padding, yPos + lineHeight);
-        yPos += lineHeight;
-        ctx.fillText(`Time: ${now.toLocaleTimeString()}`, padding, yPos + lineHeight);
-        yPos += lineHeight;
-
-        // Customer Info
-        if (customer) {
-            ctx.fillText(`Customer: ${customer.name}`, padding, yPos + lineHeight);
-            yPos += lineHeight;
-            ctx.fillText(`Phone: ${customer.phone}`, padding, yPos + lineHeight);
-            yPos += lineHeight;
-        }
-
-        // Separator
-        ctx.fillStyle = accentColor;
-        ctx.fillText("-".repeat(40), padding, yPos + lineHeight);
-        yPos += lineHeight;
-
-        // Items
-        ctx.fillStyle = textColor;
-        if (productItems.length === 0) {
-            ctx.fillText("No Items", padding, yPos + lineHeight);
-            yPos += lineHeight;
-        } else {
-            productItems.forEach(item => {
-                const product = productDetails[item.code];
-                const name = (product?.name || 'Unknown').substring(0, 20).padEnd(20, ' ');
-                const qty = item.quantity.toString().padStart(2, ' ');
-                const amount = (product?.price * item.quantity).toFixed(2).padStart(8, ' ');
-                ctx.fillText(`${name} x${qty} Rs. ${amount}`, padding, yPos + lineHeight);
-                yPos += lineHeight;
-            });
-        }
-
-        // Separator
-        ctx.fillStyle = accentColor;
-        ctx.fillText("-".repeat(40), padding, yPos + lineHeight);
-        yPos += lineHeight;
-
-        // Total
-        ctx.font = 'bold 18px Arial';
-        ctx.fillText(`Total: Rs. ${totalAmount.toFixed(2)}`, padding, yPos + lineHeight);
-        yPos += lineHeight * 2;
-
-        // QR Code
-        const upiUrl = `upi://pay?pa=${upiDetails.upiId}&pn=${encodeURIComponent(upiDetails.name)}&am=${totalAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(upiDetails.note)}`;
-        const qrCode = new QRCodeStyling({
-            width: qrSize,
-            height: qrSize,
-            data: upiUrl,
-            dotsOptions: { color: accentColor, type: "rounded" },
-            backgroundOptions: { color: "#ffffff" }
-        });
-
-        const qrCanvas = document.createElement('canvas');
-        qrCanvas.width = qrSize;
-        qrCanvas.height = qrSize;
-        await qrCode.update({ canvas: qrCanvas });
-        ctx.drawImage(qrCanvas, (width - qrSize) / 2, yPos, qrSize, qrSize);
-
-        return canvas.toDataURL('image/png');
-    }
 
     function generateBillPDF(totalAmount) {
         const pageWidth = 48;
@@ -368,6 +267,18 @@ domReady(function () {
         doc.text(`Tm:${new Date().toLocaleTimeString()}`, margin, yPos);
         yPos += lineHeight;
 
+        const customerItem = cart.find(item => productDetails[item.code]?.isCustomer);
+        if (customerItem) {
+            const customer = productDetails[customerItem.code];
+            doc.text(`Customer: ${customer.name}`, margin, yPos);
+            yPos += lineHeight;
+            doc.text(`Phone: ${customer.phone}`, margin, yPos);
+            yPos += lineHeight;
+        }
+
+        doc.text("-".repeat(maxLineWidth / 2), pageWidth / 2, yPos, { align: 'center' });
+        yPos += lineHeight;
+
         const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
         if (productItems.length === 0) {
             doc.text("No Items", margin, yPos);
@@ -393,18 +304,8 @@ domReady(function () {
 
     function calculateContentHeight(itemCount) {
         const lineHeight = 4;
-        return (lineHeight * 4) + (itemCount === 0 ? lineHeight : itemCount * lineHeight) + (lineHeight * 4) + 8;
-    }
-
-    function dataURLtoBlob(dataURL) {
-        const byteString = atob(dataURL.split(',')[1]);
-        const mimeString = dataURL.split(',')[0].split(':')[1].split(';')[0];
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-            ia[i] = byteString.charCodeAt(i);
-        }
-        return new Blob([ab], { type: mimeString });
+        const customerLines = cart.some(item => productDetails[item.code]?.isCustomer) ? 2 : 0;
+        return (lineHeight * 4) + (itemCount === 0 ? lineHeight : itemCount * lineHeight) + (lineHeight * 4) + (customerLines * lineHeight) + 8;
     }
 
     document.getElementById('qrForm').addEventListener('submit', (e) => {

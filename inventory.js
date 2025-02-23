@@ -24,7 +24,6 @@ domReady(function () {
     let billHistory = loadFromLocalStorage('billHistory') || [];
     let inventory = loadFromLocalStorage('inventory') || {};
 
-    // Scanner for Option 1 (Product Setup)
     const html5QrcodeScannerOption1 = new Html5QrcodeScanner(
         "my-qr-reader-option1",
         { fps: 30, qrbox: { width: 250, height: 250 } }
@@ -33,42 +32,43 @@ domReady(function () {
         document.getElementById('barcode').value = decodeText;
         if (productDetails[decodeText]) {
             document.getElementById('product-name').value = productDetails[decodeText].name;
-            document.getElementById('product-price').value = productDetails[decodeText].price;
+            document.getElementById('product-price').value = productDetails[decodeText].isCustomer ? 
+                productDetails[decodeText].phone : productDetails[decodeText].price;
             document.getElementById('product-quantity').value = inventory[decodeText]?.quantity || 0;
+            document.getElementById('is-customer').checked = productDetails[decodeText].isCustomer || false;
         } else {
             document.getElementById('product-name').value = '';
             document.getElementById('product-price').value = '';
             document.getElementById('product-quantity').value = '';
+            document.getElementById('is-customer').checked = false;
         }
     });
 
-    // Scanner for Option 2 (Cart)
     const html5QrcodeScannerOption2 = new Html5QrcodeScanner(
         "my-qr-reader-option2",
         { fps: 30, qrbox: { width: 250, height: 250 } }
     );
-    let lastScannedCode = '';  // To keep track of the last scanned code
+    let lastScannedCode = '';
     
     html5QrcodeScannerOption2.render((decodeText) => {
         if (decodeText !== lastScannedCode && productDetails[decodeText]) {
-            lastScannedCode = decodeText; // Update the last scanned code
+            lastScannedCode = decodeText;
             const existingItem = cart.find(item => item.code === decodeText);
             if (!existingItem) {
-                if (inventory[decodeText].quantity > 0) {
-                    cart.push({ code: decodeText, quantity: 1 }); // Start with a quantity of 1
-                    displayCart();
+                if (productDetails[decodeText].isCustomer) {
+                    cart = cart.filter(item => !productDetails[item.code]?.isCustomer);
+                    cart.push({ code: decodeText, quantity: 1 });
+                } else if (inventory[decodeText]?.quantity > 0) {
+                    cart.push({ code: decodeText, quantity: 1 });
                 } else {
-                    alert(`Out of stock for product ${inventory[decodeText].name}!`);
+                    alert(`Out of stock for ${productDetails[decodeText].name}!`);
+                    return;
                 }
-            } else {
-                // If the item exists, do not increase the quantity automatically
                 displayCart();
             }
-        } else if (decodeText !== lastScannedCode) {
-            // If the product is not found in the productDetails, alert the user
-            alert(`Product ${decodeText} not found!`);
+        } else if (!productDetails[decodeText]) {
+            alert(`Item ${decodeText} not found!`);
         }
-        // Scanner continues without stopping
     });
 
     function displayCart() {
@@ -77,22 +77,26 @@ domReady(function () {
         cart.forEach((item, index) => {
             const product = productDetails[item.code];
             const itemDiv = document.createElement('div');
-            itemDiv.className = 'cart-item';
-            itemDiv.innerHTML = `
-                <span class="product-name">${product?.name || 'Unknown Product'}</span>
-                <span class="product-price">Rs. ${product?.price?.toFixed(2) || '0.00'}</span>
-                <input type="number" 
-                       value="1"  // Default to 1 for display, but cart will have actual quantity
-                       min="1" 
-                       data-index="${index}"
-                       class="quantity-input">
-                <span class="item-total">Rs. ${(product?.price * item.quantity).toFixed(2) || '0.00'}</span>
-            `;
-            cartDiv.appendChild(itemDiv);
+            itemDiv.className = 'cart-item' + (product?.isCustomer ? ' customer' : '');
             
-            // After appending, set the actual quantity from cart
-            const quantityInput = itemDiv.querySelector('.quantity-input');
-            quantityInput.value = item.quantity;
+            if (product?.isCustomer) {
+                itemDiv.innerHTML = `
+                    <span class="customer-name">Customer: ${product.name}</span>
+                    <span class="customer-phone">Phone: ${product.phone}</span>
+                `;
+            } else {
+                itemDiv.innerHTML = `
+                    <span class="product-name">${product?.name || 'Unknown'}</span>
+                    <span class="product-price">Rs. ${product?.price?.toFixed(2) || '0.00'}</span>
+                    <input type="number" 
+                           value="${item.quantity}" 
+                           min="1" 
+                           data-index="${index}"
+                           class="quantity-input">
+                    <span class="item-total">Rs. ${(product?.price * item.quantity).toFixed(2) || '0.00'}</span>
+                `;
+            }
+            cartDiv.appendChild(itemDiv);
         });
         calculateTotal();
     }
@@ -100,12 +104,11 @@ domReady(function () {
     function calculateTotal() {
         const total = cart.reduce((sum, item) => {
             const product = productDetails[item.code];
-            return sum + (product?.price || 0) * item.quantity;
+            return product?.isCustomer ? sum : sum + (product?.price || 0) * item.quantity;
         }, 0);
         document.getElementById('total').innerHTML = `<strong>Total:</strong> Rs. ${total.toFixed(2)}`;
     }
 
-    // Event Listeners
     document.getElementById('cart').addEventListener('input', (e) => {
         if (e.target.classList.contains('quantity-input')) {
             const index = e.target.dataset.index;
@@ -118,13 +121,11 @@ domReady(function () {
                     cart[index].quantity = newQty;
                     displayCart();
                 } else {
-                    alert(`Not enough stock. Only ${inventory[productCode].quantity} left.`);
+                    alert(`Only ${inventory[productCode].quantity} left!`);
                     e.target.value = oldQty;
                 }
-            } else if (e.target.value === '') {
-                e.target.value = '';
             } else {
-                alert('Quantity must be a positive number.');
+                alert('Quantity must be positive!');
                 e.target.value = oldQty;
             }
         }
@@ -133,138 +134,145 @@ domReady(function () {
     document.getElementById('save-barcode').addEventListener('click', () => {
         const barcode = document.getElementById('barcode').value.trim();
         const name = document.getElementById('product-name').value.trim();
-        const price = parseFloat(document.getElementById('product-price').value);
+        const priceOrNumber = document.getElementById('product-price').value;
         const quantity = parseInt(document.getElementById('product-quantity').value) || 0;
+        const isCustomer = document.getElementById('is-customer').checked;
 
-        if (barcode && name && !isNaN(price) && price > 0) {
-            productDetails[barcode] = { name, price };
-            inventory[barcode] = { name, price, quantity };
+        if (barcode && name) {
+            if (isCustomer) {
+                productDetails[barcode] = {
+                    name,
+                    phone: priceOrNumber,
+                    isCustomer: true
+                };
+            } else {
+                const price = parseFloat(priceOrNumber);
+                if (!isNaN(price) && price > 0) {
+                    productDetails[barcode] = { name, price, isCustomer: false };
+                    inventory[barcode] = { name, price, quantity };
+                    saveToLocalStorage('inventory', inventory);
+                } else {
+                    alert('Invalid price!');
+                    return;
+                }
+            }
             saveToLocalStorage('productDetails', productDetails);
-            saveToLocalStorage('inventory', inventory);
-            alert('Product saved successfully!');
+            alert(`${isCustomer ? 'Customer' : 'Product'} saved!`);
+            document.getElementById('product-name').value = '';
+            document.getElementById('product-price').value = '';
+            document.getElementById('product-quantity').value = '';
+            document.getElementById('is-customer').checked = false;
         } else {
-            alert('Invalid input! Please check all fields.');
+            alert('Fill all required fields!');
         }
     });
 
-    // PDF Generation
     document.getElementById('generate-bill').addEventListener('click', async () => {
         try {
-            // Validate UPI details
             if (!upiDetails.upiId || !upiDetails.name || !upiDetails.note) {
-                throw new Error('Please configure UPI details first');
+                throw new Error('Configure UPI details first');
             }
 
-            // Calculate total
             const totalAmount = cart.reduce((sum, item) => {
                 const product = productDetails[item.code];
-                return sum + (product?.price || 0) * item.quantity;
+                return product?.isCustomer ? sum : sum + (product?.price || 0) * item.quantity;
             }, 0);
 
-            // Generate UPI URL
-            const upiUrl = `upi://pay?pa=${upiDetails.upiId}` +
-                            `&pn=${encodeURIComponent(upiDetails.name)}` +
-                            `&am=${totalAmount.toFixed(2)}` +
-                            `&cu=INR` +
-                            `&tn=${encodeURIComponent(upiDetails.note)}`;
+            const customerItem = cart.find(item => 
+                item.code.startsWith('qrwale') && productDetails[item.code]?.isCustomer
+            );
 
-            // Create QR Code
-            const qrCode = new QRCodeStyling({
-                width: 200,
-                height: 200,
-                data: upiUrl,
-                dotsOptions: {
-                    color: "#000",
-                    type: "rounded"
-                },
-                backgroundOptions: {
-                    color: "#ffffff"
-                }
-            });
+            const doc = generateBillPDF(totalAmount);
 
-            // Render QR Code
-            const qrContainer = document.getElementById('bill-qr-code');
-            qrContainer.innerHTML = '';
-            qrCode.append(qrContainer);
-
-            // Wait for QR code rendering
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // Create PDF
-            const doc = new jsPDF();
-            let yPos = 20;
-
-            // Header
-            doc.setFontSize(22);
-            doc.text("INVOICE", 105, yPos, { align: 'center' });
-            yPos += 15;
-
-            // Invoice Details
-            doc.setFontSize(12);
-            doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, yPos);
-            doc.text(`Time: ${new Date().toLocaleTimeString()}`, 160, yPos);
-            yPos += 15;
-
-            // Table Header
-            doc.setFillColor(240, 240, 240);
-            doc.rect(20, yPos, 170, 10, 'F');
-            doc.setFontSize(12);
-            doc.text("Item", 22, yPos + 7);
-            doc.text("Qty", 100, yPos + 7);
-            doc.text("Price", 160, yPos + 7);
-            yPos += 12;
-
-            // Items
-            cart.forEach(item => {
-                const product = productDetails[item.code];
-                doc.setFontSize(10);
-                doc.text(product?.name || 'Unknown Item', 22, yPos);
-                doc.text(item.quantity.toString(), 102, yPos);
-                doc.text(`Rs. ${(product?.price * item.quantity).toFixed(2)}`, 162, yPos);
-                yPos += 8;
-            });
-
-            // Total
-            yPos += 10;
-            doc.setFontSize(14);
-            doc.text(`Total Amount: Rs. ${totalAmount.toFixed(2)}`, 20, yPos);
-
-            // Add QR Code
-            const qrCanvas = qrContainer.querySelector('canvas');
-            if (qrCanvas) {
-                const qrData = qrCanvas.toDataURL('image/png');
-                doc.addImage(qrData, 'PNG', 140, yPos - 10, 50, 50);
-            }
-
-            // Save to history
             billHistory.push({
                 date: new Date().toLocaleString(),
                 total: totalAmount.toFixed(2),
-                items: [...cart]
+                items: [...cart.filter(item => !productDetails[item.code]?.isCustomer)]
             });
             saveToLocalStorage('billHistory', billHistory);
 
-            // Update inventory and save changes after bill generation
             cart.forEach(item => {
-                updateInventory(item.code, item.quantity);
+                if (!productDetails[item.code]?.isCustomer) {
+                    updateInventory(item.code, item.quantity);
+                }
             });
-            
-            // Clear cart
+
+            if (customerItem) {
+                const customer = productDetails[customerItem.code];
+                const pdfBlob = doc.output('blob');
+                const message = `Hello ${customer.name},\nYour bill for Rs. ${totalAmount.toFixed(2)}.\nThank you!`;
+                const whatsappUrl = `https://wa.me/${customer.phone}?text=${encodeURIComponent(message)}`;
+                window.open(whatsappUrl, '_blank');
+                alert('Please attach the bill PDF in WhatsApp');
+            } else {
+                const pdfBlob = doc.output('blob');
+                window.open(URL.createObjectURL(pdfBlob), '_blank');
+            }
+
             cart = [];
             displayCart();
             updateDashboard();
 
-            // Open PDF
-            const pdfBlob = doc.output('blob');
-            window.open(URL.createObjectURL(pdfBlob), '_blank');
-
         } catch (error) {
             alert(`Error: ${error.message}`);
-            console.error(error);
         }
     });
 
-    // UPI Form Handler
+    function generateBillPDF(totalAmount) {
+        const pageWidth = 48;
+        const margin = 1;
+        const maxLineWidth = pageWidth - (margin * 2);
+        const lineHeight = 4;
+        const contentHeight = calculateContentHeight(cart.filter(item => !productDetails[item.code]?.isCustomer).length);
+
+        const doc = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: [pageWidth, contentHeight]
+        });
+
+        doc.setFont("courier");
+        doc.setFontSize(8);
+        let yPos = margin;
+
+        doc.setFontSize(10);
+        doc.text("INVOICE", pageWidth / 2, yPos, { align: 'center' });
+        yPos += lineHeight;
+
+        doc.setFontSize(8);
+        doc.text(`Dt:${new Date().toLocaleDateString()}`, margin, yPos);
+        yPos += lineHeight;
+        doc.text(`Tm:${new Date().toLocaleTimeString()}`, margin, yPos);
+        yPos += lineHeight;
+
+        const productItems = cart.filter(item => !productDetails[item.code]?.isCustomer);
+        if (productItems.length === 0) {
+            doc.text("No Items", margin, yPos);
+            yPos += lineHeight;
+        } else {
+            productItems.forEach(item => {
+                const product = productDetails[item.code];
+                const name = (product?.name || 'Unk').substring(0, 12).padEnd(12, ' ');
+                const qty = item.quantity.toString().padStart(2, ' ');
+                const amount = (product?.price * item.quantity).toFixed(2).padStart(7, ' ');
+                doc.text(`${name}x${qty}Rs${amount}`, margin, yPos);
+                yPos += lineHeight;
+            });
+        }
+
+        yPos += lineHeight;
+        doc.text("-".repeat(maxLineWidth / 2), pageWidth / 2, yPos, { align: 'center' });
+        yPos += lineHeight;
+        doc.text(`Tot:Rs${totalAmount.toFixed(2)}`, pageWidth / 2, yPos, { align: 'center' });
+
+        return doc;
+    }
+
+    function calculateContentHeight(itemCount) {
+        const lineHeight = 4;
+        return (lineHeight * 4) + (itemCount === 0 ? lineHeight : itemCount * lineHeight) + (lineHeight * 4) + 8;
+    }
+
     document.getElementById('qrForm').addEventListener('submit', (e) => {
         e.preventDefault();
         upiDetails = {
@@ -276,49 +284,6 @@ domReady(function () {
         alert('UPI details saved!');
     });
 
-    // Import/Export Handlers
-    document.getElementById('download-data').addEventListener('click', () => {
-        const data = {
-            productDetails,
-            upiDetails,
-            billHistory,
-            inventory
-        };
-        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'qr-app-data.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    });
-
-    document.getElementById('upload-data').addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const data = JSON.parse(event.target.result);
-                    productDetails = data.productDetails || {};
-                    upiDetails = data.upiDetails || {};
-                    billHistory = data.billHistory || {};
-                    inventory = data.inventory || {};
-                    saveToLocalStorage('productDetails', productDetails);
-                    saveToLocalStorage('upiDetails', upiDetails);
-                    saveToLocalStorage('billHistory', billHistory);
-                    saveToLocalStorage('inventory', inventory);
-                    alert('Data imported successfully!');
-                } catch (error) {
-                    alert('Invalid file format!');
-                }
-            };
-            reader.readAsText(file);
-        }
-    });
-
-    // Bill History Display
     document.getElementById('option5-button').addEventListener('click', () => {
         const historyContainer = document.getElementById('bill-history');
         historyContainer.innerHTML = '';
@@ -342,13 +307,10 @@ domReady(function () {
         });
     });
 
-    // Inventory Management
     function updateInventory(barcode, quantityChange) {
         if (inventory[barcode]) {
             inventory[barcode].quantity -= quantityChange;
-            if (inventory[barcode].quantity < 0) {
-                inventory[barcode].quantity = 0; // Ensure no negative stock
-            }
+            if (inventory[barcode].quantity < 0) inventory[barcode].quantity = 0;
             saveToLocalStorage('inventory', inventory);
         }
     }
@@ -367,22 +329,20 @@ domReady(function () {
             inventoryList.appendChild(item);
         }
 
-        // Event listeners for editing quantity:
         document.querySelectorAll('.edit-quantity').forEach(input => {
             input.addEventListener('change', function() {
                 const barcode = this.getAttribute('data-barcode');
                 const newQuantity = parseInt(this.value);
                 if (newQuantity >= 0) {
                     inventory[barcode].quantity = newQuantity;
-                    document.getElementById('save-inventory').style.display = 'block'; // Show save button
+                    document.getElementById('save-inventory').style.display = 'block';
                 } else {
                     alert('Quantity cannot be negative!');
-                    this.value = inventory[barcode].quantity; // Reset to previous value
+                    this.value = inventory[barcode].quantity;
                 }
             });
         });
 
-        // Event listener for editing product details
         document.querySelectorAll('.edit-product').forEach(button => {
             button.addEventListener('click', function() {
                 const barcode = this.getAttribute('data-barcode');
@@ -391,117 +351,70 @@ domReady(function () {
                 document.getElementById('product-name').value = product.name;
                 document.getElementById('product-price').value = product.price;
                 document.getElementById('product-quantity').value = product.quantity;
-                switchToOption1(); // Switch to Set Barcode Values to allow editing
-                document.getElementById('save-inventory').style.display = 'block'; // Show save button
+                document.getElementById('is-customer').checked = false;
+                switchToOption('option1');
+                document.getElementById('save-inventory').style.display = 'block';
             });
         });
 
-        // Save button event listener
         document.getElementById('save-inventory').addEventListener('click', function() {
             saveToLocalStorage('inventory', inventory);
-            this.style.display = 'none'; // Hide save button after saving
+            this.style.display = 'none';
             alert('Inventory saved!');
-            switchToInventory(); // Refresh inventory view
+            switchToOption('inventory-option');
+            displayInventory();
         });
     }
 
     function updateDashboard() {
-        let totalSales = 0;
-    
-        billHistory.forEach(bill => {
-            totalSales += parseFloat(bill.total);
-        });
-    
+        let totalSales = billHistory.reduce((sum, bill) => sum + parseFloat(bill.total), 0);
         document.getElementById('total-sales').textContent = totalSales.toFixed(2);
-    
+
         const lowStockList = document.getElementById('low-stock-items');
         lowStockList.innerHTML = '';
-        Object.entries(inventory).filter(([_, item]) => item.quantity <= 5).forEach(([barcode, item]) => {
+        Object.entries(inventory).filter(([_, item]) => item.quantity <= 5).forEach(([_, item]) => {
             const li = document.createElement('li');
             li.textContent = `${item.name} (${item.quantity} left)`;
             lowStockList.appendChild(li);
         });
     }
 
-    // Show/Hide Options
-    function showMoreOptions() {
+    function showMoreOptions(e) {
+        e.stopPropagation();
         const moreOptions = document.getElementById('moreOptions');
         moreOptions.classList.toggle('hidden');
-
-        // Remove any existing click listeners to avoid duplication
-        document.body.removeEventListener('click', hideOptions);
-        document.body.removeEventListener('touchstart', hideOptions);
-
-        // Add new listener to hide options when clicking outside
         setTimeout(() => {
             document.body.addEventListener('click', hideOptions);
-            document.body.addEventListener('touchstart', hideOptions);
-        }, 10); // Small delay to prevent immediate closing
+        }, 10);
     }
 
     function hideOptions(e) {
         const moreOptions = document.getElementById('moreOptions');
-        if (moreOptions && !moreOptions.contains(e.target) && e.target !== moreButton) {
+        if (!moreOptions.contains(e.target) && e.target !== document.getElementById('moreButton')) {
             moreOptions.classList.add('hidden');
         }
     }
 
     function switchToOption(optionId) {
         document.querySelectorAll('.option').forEach(option => option.style.display = 'none');
-        document.getElementById('dashboard').style.display = 'block'; // Show dashboard by default
+        document.getElementById('dashboard').style.display = 'block';
         document.getElementById(optionId).style.display = 'block';
-        document.getElementById('moreOptions').classList.add('hidden'); // Hide options when switching
+        document.getElementById('moreOptions').classList.add('hidden');
     }
 
-    function switchToOption1() {
-        switchToOption('option1');
-    }
+    const moreButton = document.getElementById('moreButton');
+    moreButton.addEventListener('click', showMoreOptions);
 
-    function switchToOption2() {
-        switchToOption('option2');
-    }
-
-    function switchToOption3() {
-        switchToOption('option3');
-    }
-
-    function switchToOption4() {
-        switchToOption('option4');
-    }
-
-    function switchToOption5() {
-        switchToOption('option5');
-    }
-
-    function switchToInventory() {
+    document.getElementById('option1-button').addEventListener('click', () => switchToOption('option1'));
+    document.getElementById('option2-button').addEventListener('click', () => switchToOption('option2'));
+    document.getElementById('option3-button').addEventListener('click', () => switchToOption('option3'));
+    document.getElementById('option4-button').addEventListener('click', () => switchToOption('option4'));
+    document.getElementById('option5-button').addEventListener('click', () => switchToOption('option5'));
+    document.getElementById('inventory-button').addEventListener('click', () => {
         switchToOption('inventory-option');
         displayInventory();
-    }
+    });
 
-    let moreButton = document.getElementById('moreButton');
-    if (moreButton) {
-        ['click', 'touchstart'].forEach(event => {
-            moreButton.removeEventListener(event, showMoreOptions);
-        });
-
-        moreButton.addEventListener('touchstart', function(e) {
-            e.stopPropagation();
-            e.preventDefault();
-            showMoreOptions();
-        });
-
-        moreButton.addEventListener('click', showMoreOptions);
-    }
-
-    // Add click listeners for the other options buttons
-    document.getElementById('option1-button').addEventListener('click', switchToOption1);
-    document.getElementById('option2-button').addEventListener('click', switchToOption2);
-    document.getElementById('option3-button').addEventListener('click', switchToOption3);
-    document.getElementById('option4-button').addEventListener('click', switchToOption4);
-    document.getElementById('option5-button').addEventListener('click', switchToOption5);
-    document.getElementById('inventory-button').addEventListener('click', switchToInventory);
-
-    // Initial setup
-    switchToOption2(); // Default to cart view
+    switchToOption('option2');
     updateDashboard();
 });
